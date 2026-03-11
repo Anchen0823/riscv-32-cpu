@@ -61,7 +61,8 @@ module SCPU(
     end
 
     // 译码与寄存器读取逻辑
-    wire [2:0] id_imm_sel, id_alu_ctrl;
+    wire [2:0] id_imm_sel;
+    wire [3:0] id_alu_ctrl;
     wire id_alu_src, id_mem_to_reg, id_reg_write, id_mem_write, id_is_lui, id_jump, id_branch;
     
     ctrl U_CTRL (
@@ -101,7 +102,7 @@ module SCPU(
     reg  [31:0] ex_rdata1, ex_rdata2, ex_imm, ex_pc;
     reg  [4:0]  ex_rd;
     reg         ex_alu_src, ex_mem_to_reg, ex_reg_write, ex_mem_write, ex_is_lui;
-    reg  [2:0]  ex_alu_ctrl;
+    reg  [3:0]  ex_alu_ctrl;
 
     // ID/EX 流水线寄存器
     always @(posedge clk) begin
