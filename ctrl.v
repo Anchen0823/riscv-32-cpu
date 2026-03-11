@@ -27,7 +27,7 @@ module ctrl(
     // 0000 ADD  0001 SUB  0010 SLL  0011 SLT  0100 SLTU
     // 0101 XOR  0110 SRL  0111 SRA  1000 OR   1001 AND
     always @(*) begin
-        // 赋予默认值，防止产生非预期的锁存器 (Latch)
+        // 赋予默认值
         ALUSrc   = 1'b0;
         MemtoReg = 1'b0;
         RegWrite = 1'b0;
