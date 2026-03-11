@@ -1,0 +1,1 @@
+`define PR_DATA_WIDTH 100 // pipepline register width
