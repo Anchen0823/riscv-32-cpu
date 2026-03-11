@@ -13,7 +13,7 @@ module ctrl(
     output reg  [3:0] ALUCtrl
 );
 
-    // RISC-V 常见指令的 Opcode 定义
+    // Opcode 定义
     localparam R_TYPE = 7'b0110011; // add, sub, and, or...
     localparam I_TYPE = 7'b0010011; // addi, andi, ori...
     localparam LOAD   = 7'b0000011; // lw

@@ -16,7 +16,10 @@ module RF(
     integer i;
 
     // 写操作
-    always @(posedge clk or posedge rst) begin
+    // 采用“上半拍写回、下半拍读出”的等效实现：
+    // 流水线级间寄存在 posedge 更新，寄存器堆在 negedge 写入，
+    // 使下一拍 ID 在 posedge 锁存操作数时可见到最新写回值。
+    always @(negedge clk or posedge rst) begin
         if (rst) begin
             for (i = 0; i < 32; i = i + 1) begin
                 rf[i] <= 32'b0;
