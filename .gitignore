@@ -1,2 +1,5 @@
 *.vcd
 .DS_Store
+simv
+simv_out
+results.txt

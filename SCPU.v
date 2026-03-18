@@ -51,10 +51,10 @@ module SCPU(
     reg  [31:0] id_pc, id_inst;
 
     // IF/ID 流水线寄存器
-    always @(posedge clk) begin
+    always @(posedge clk or posedge reset) begin
         if (reset) id_valid <= 1'b0;
-        else if (id_allowin) id_valid <= if_to_id_valid;
-        if (id_allowin && if_to_id_valid) begin
+        else if (id_allowin) id_valid <= if_to_id_valid && !id_redirect;
+        if (id_allowin && if_to_id_valid && !id_redirect) begin
             id_pc   <= if_pc;
             id_inst <= inst_in;
         end
@@ -62,6 +62,7 @@ module SCPU(
 
     // 译码与寄存器读取逻辑
     wire [2:0] id_imm_sel;
+    wire [2:0] id_funct3;
     wire [3:0] id_alu_ctrl;
     wire id_alu_src, id_mem_to_reg, id_reg_write, id_mem_write, id_is_lui, id_jump, id_branch;
     
@@ -71,6 +72,7 @@ module SCPU(
         .MemWrite(id_mem_write), .Branch(id_branch), .Jump(id_jump),
         .is_lui(id_is_lui), .ImmSel(id_imm_sel), .ALUCtrl(id_alu_ctrl)
     );
+    assign id_funct3 = id_inst[14:12];
 
     // 立即数生成 (ImmGen)
     reg [31:0] id_ext_imm;
@@ -85,8 +87,34 @@ module SCPU(
         endcase
     end
 
+    // 分支/跳转判断与目标地址计算（在 ID 阶段完成）
+    wire id_beq_taken  = (rdata1 == rdata2);
+    wire id_bne_taken  = (rdata1 != rdata2);
+    wire id_blt_taken  = ($signed(rdata1) < $signed(rdata2));
+    wire id_bge_taken  = ($signed(rdata1) >= $signed(rdata2));
+    wire id_bltu_taken = (rdata1 < rdata2);
+    wire id_bgeu_taken = (rdata1 >= rdata2);
+
+    reg id_branch_taken;
+    always @(*) begin
+        case (id_inst[14:12])
+            3'b000: id_branch_taken = id_beq_taken;   // BEQ
+            3'b001: id_branch_taken = id_bne_taken;   // BNE
+            3'b100: id_branch_taken = id_blt_taken;   // BLT
+            3'b101: id_branch_taken = id_bge_taken;   // BGE
+            3'b110: id_branch_taken = id_bltu_taken;  // BLTU
+            3'b111: id_branch_taken = id_bgeu_taken;  // BGEU
+            default: id_branch_taken = 1'b0;
+        endcase
+    end
+
+    wire id_is_jalr    = (id_inst[6:0] == 7'b1100111);
+    wire [31:0] id_branch_target = id_pc + id_ext_imm;
+    wire [31:0] id_jalr_target   = (rdata1 + id_ext_imm) & 32'hffff_fffe;
+    wire id_redirect = id_valid && (id_jump || (id_branch && id_branch_taken));
+
     wire [31:0] rdata1, rdata2;
-    // RF 写回数据在 WB 阶段，此处仅读取
+    // RF 读取
     RF U_RF (
         .clk(clk), .rst(reset), .R1_adr(id_inst[19:15]), .R2_adr(id_inst[24:20]),
         .W_adr(wb_rd), .Din(wb_write_data), .We(wb_reg_write), // 来自 WB 阶段
@@ -101,26 +129,30 @@ module SCPU(
     reg         ex_valid;
     reg  [31:0] ex_rdata1, ex_rdata2, ex_imm, ex_pc;
     reg  [4:0]  ex_rd;
-    reg         ex_alu_src, ex_mem_to_reg, ex_reg_write, ex_mem_write, ex_is_lui;
+    reg         ex_alu_src, ex_mem_to_reg, ex_reg_write, ex_mem_write, ex_is_lui, ex_jump;
+    reg  [2:0]  ex_funct3;
     reg  [3:0]  ex_alu_ctrl;
 
     // ID/EX 流水线寄存器
-    always @(posedge clk) begin
+    always @(posedge clk or posedge reset) begin
         if (reset) ex_valid <= 1'b0;
         else if (ex_allowin) ex_valid <= id_to_ex_valid;
         if (ex_allowin && id_to_ex_valid) begin
             {ex_rdata1, ex_rdata2, ex_imm, ex_pc} <= {rdata1, rdata2, id_ext_imm, id_pc};
             ex_rd <= id_inst[11:7];
-            {ex_alu_src, ex_mem_to_reg, ex_reg_write, ex_mem_write, ex_is_lui, ex_alu_ctrl} <= 
-            {id_alu_src, id_mem_to_reg, id_reg_write, id_mem_write, id_is_lui, id_alu_ctrl};
+            {ex_alu_src, ex_mem_to_reg, ex_reg_write, ex_mem_write, ex_is_lui, ex_jump, ex_alu_ctrl} <= 
+            {id_alu_src, id_mem_to_reg, id_reg_write, id_mem_write, id_is_lui, id_jump, id_alu_ctrl};
+            ex_funct3 <= id_funct3;
         end
     end
 
     wire [31:0] alu_A = ex_is_lui ? 32'b0 : ex_rdata1;
     wire [31:0] alu_B = ex_alu_src ? ex_imm : ex_rdata2;
+    wire [31:0] ex_alu_result_raw;
     wire [31:0] ex_alu_result;
 
-    alu U_ALU (.A(alu_A), .B(alu_B), .ALUOp(ex_alu_ctrl), .C(ex_alu_result));
+    alu U_ALU (.A(alu_A), .B(alu_B), .ALUOp(ex_alu_ctrl), .C(ex_alu_result_raw));
+    assign ex_alu_result = ex_jump ? (ex_pc + 32'd4) : ex_alu_result_raw;
     
     assign ex_to_mem_valid = ex_valid && ex_ready_go;
 
@@ -131,9 +163,10 @@ module SCPU(
     reg  [31:0] mem_alu_result, mem_write_data;
     reg  [4:0]  mem_rd;
     reg         mem_mem_to_reg, mem_reg_write, mem_mem_write;
+    reg  [2:0]  mem_funct3;
 
     // EX/MEM 流水线寄存器
-    always @(posedge clk) begin
+    always @(posedge clk or posedge reset) begin
         if (reset) mem_valid <= 1'b0;
         else if (mem_allowin) mem_valid <= ex_to_mem_valid;
         if (mem_allowin && ex_to_mem_valid) begin
@@ -141,11 +174,80 @@ module SCPU(
             mem_write_data <= ex_rdata2;
             mem_rd <= ex_rd;
             {mem_mem_to_reg, mem_reg_write, mem_mem_write} <= {ex_mem_to_reg, ex_reg_write, ex_mem_write};
+            mem_funct3 <= ex_funct3;
         end
     end
 
+    wire [1:0] mem_addr_off = mem_alu_result[1:0];
+    reg  [31:0] mem_store_data;
+    reg  [31:0] mem_load_data;
+
+    // 由于 dm.v 仅支持 32-bit 整字读写，这里在 CPU 侧完成字节/半字拼接与扩展。
+    always @(*) begin
+        mem_store_data = mem_write_data;
+        case (mem_funct3)
+            3'b000: begin // SB
+                case (mem_addr_off)
+                    2'b00: mem_store_data = {Data_in[31:8],  mem_write_data[7:0]};
+                    2'b01: mem_store_data = {Data_in[31:16], mem_write_data[7:0], Data_in[7:0]};
+                    2'b10: mem_store_data = {Data_in[31:24], mem_write_data[7:0], Data_in[15:0]};
+                    2'b11: mem_store_data = {mem_write_data[7:0], Data_in[23:0]};
+                    default: mem_store_data = mem_write_data;
+                endcase
+            end
+            3'b001: begin // SH
+                case (mem_addr_off[1])
+                    1'b0: mem_store_data = {Data_in[31:16], mem_write_data[15:0]};
+                    1'b1: mem_store_data = {mem_write_data[15:0], Data_in[15:0]};
+                    default: mem_store_data = mem_write_data;
+                endcase
+            end
+            3'b010: mem_store_data = mem_write_data; // SW
+            default: mem_store_data = mem_write_data;
+        endcase
+    end
+
+    always @(*) begin
+        case (mem_funct3)
+            3'b000: begin // LB
+                case (mem_addr_off)
+                    2'b00: mem_load_data = {{24{Data_in[7]}},   Data_in[7:0]};
+                    2'b01: mem_load_data = {{24{Data_in[15]}},  Data_in[15:8]};
+                    2'b10: mem_load_data = {{24{Data_in[23]}},  Data_in[23:16]};
+                    2'b11: mem_load_data = {{24{Data_in[31]}},  Data_in[31:24]};
+                    default: mem_load_data = 32'b0;
+                endcase
+            end
+            3'b001: begin // LH
+                case (mem_addr_off[1])
+                    1'b0: mem_load_data = {{16{Data_in[15]}}, Data_in[15:0]};
+                    1'b1: mem_load_data = {{16{Data_in[31]}}, Data_in[31:16]};
+                    default: mem_load_data = 32'b0;
+                endcase
+            end
+            3'b010: mem_load_data = Data_in; // LW
+            3'b100: begin // LBU
+                case (mem_addr_off)
+                    2'b00: mem_load_data = {24'b0, Data_in[7:0]};
+                    2'b01: mem_load_data = {24'b0, Data_in[15:8]};
+                    2'b10: mem_load_data = {24'b0, Data_in[23:16]};
+                    2'b11: mem_load_data = {24'b0, Data_in[31:24]};
+                    default: mem_load_data = 32'b0;
+                endcase
+            end
+            3'b101: begin // LHU
+                case (mem_addr_off[1])
+                    1'b0: mem_load_data = {16'b0, Data_in[15:0]};
+                    1'b1: mem_load_data = {16'b0, Data_in[31:16]};
+                    default: mem_load_data = 32'b0;
+                endcase
+            end
+            default: mem_load_data = Data_in;
+        endcase
+    end
+
     assign Addr_out = mem_alu_result;
-    assign Data_out = mem_write_data;
+    assign Data_out = mem_store_data;
     assign mem_w    = mem_mem_write && mem_valid; // 只有有效指令才能写内存
 
     assign mem_to_wb_valid = mem_valid && mem_ready_go;
@@ -159,12 +261,12 @@ module SCPU(
     reg         wb_mem_to_reg, wb_reg_write;
 
     // MEM/WB 流水线寄存器
-    always @(posedge clk) begin
+    always @(posedge clk or posedge reset) begin
         if (reset) wb_valid <= 1'b0;
         else if (wb_allowin) wb_valid <= mem_to_wb_valid;
         if (wb_allowin && mem_to_wb_valid) begin
             wb_alu_result <= mem_alu_result;
-            wb_mem_data   <= Data_in;
+            wb_mem_data   <= mem_load_data;
             wb_rd <= mem_rd;
             {wb_mem_to_reg, wb_reg_write} <= {mem_mem_to_reg, mem_reg_write};
         end
@@ -172,7 +274,9 @@ module SCPU(
 
     wire [31:0] wb_write_data = wb_mem_to_reg ? wb_mem_data : wb_alu_result;
     
-    // PC 更新逻辑 (简单实现：假设无阻塞)
-    assign next_pc = if_pc + 4; 
+    // PC 更新逻辑：支持 branch/jal/jalr
+    assign next_pc = id_redirect
+                   ? (id_is_jalr ? id_jalr_target : id_branch_target)
+                   : (if_pc + 32'd4);
 
 endmodule
