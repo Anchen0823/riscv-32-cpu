@@ -110,10 +110,11 @@ module ctrl(
             end
             
             LUI: begin
+                ALUSrc   = 1'b1;
                 RegWrite = 1'b1;
                 is_lui   = 1'b1;
                 ImmSel   = 3'b100; // U-Type
-                ALUCtrl  = 4'b0000; // ALU 可以直接做加法 (与0相加)
+                ALUCtrl  = 4'b0000; // rd = 0 + imm
             end
 
             AUIPC: begin
