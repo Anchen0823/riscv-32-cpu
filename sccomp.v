@@ -8,6 +8,8 @@ module sccomp(clk, rstn, reg_sel, reg_data);
    wire [31:0]    PC;
    wire           MemWrite;
    wire [31:0]    dm_addr, dm_din, dm_dout;
+   wire [1:0]     dm_word_off;
+   wire [2:0]     dm_funct3;
    
    wire rst = ~rstn;
        
@@ -21,6 +23,8 @@ module sccomp(clk, rstn, reg_sel, reg_data);
          .PC_out(PC),                   // output: PC
          .Addr_out(dm_addr),          // output: address from cpu to memory
          .Data_out(dm_din),        // output: data from cpu to memory
+         .dm_word_off(dm_word_off),
+         .dm_funct3(dm_funct3),
          .reg_sel(reg_sel),         // input:  register selection
          .reg_data(reg_data)        // output: register data
          );
@@ -30,6 +34,8 @@ module sccomp(clk, rstn, reg_sel, reg_data);
          .clk(clk),           // input:  cpu clock
          .DMWr(MemWrite),     // input:  ram write
          .addr(dm_addr[8:2]), // input:  ram address
+         .word_off(dm_word_off),
+         .st_funct3(dm_funct3),
          .din(dm_din),        // input:  data to ram
          .dout(dm_dout)       // output: data from ram
          );

@@ -8,7 +8,9 @@ module SCPU(
     output        mem_w,      // 访存写信号
     output [31:0] PC_out,     // 指令地址
     output [31:0] Addr_out,   // 访存地址
-    output [31:0] Data_out,   // 访存写入数据
+    output [31:0] Data_out,   // 访存写入数据（rs2 原始值，SB/SH 合并由 dm 完成）
+    output [1:0]  dm_word_off,// 字内字节偏移，接 Addr_out[1:0]
+    output [2:0]  dm_funct3,  // MEM 段 funct3，写内存时 dm 用其区分 SB/SH/SW
     input  [4:0]  reg_sel,    // 调试用
     output [31:0] reg_data    // 调试用
 );
@@ -175,33 +177,7 @@ module SCPU(
     end
 
     wire [1:0] mem_addr_off = mem_alu_result[1:0];
-    reg  [31:0] mem_store_data;
     reg  [31:0] mem_load_data;
-
-    // 字节/半字拼接与扩展。
-    always @(*) begin
-        mem_store_data = mem_write_data;
-        case (mem_funct3)
-            3'b000: begin // SB
-                case (mem_addr_off)
-                    2'b00: mem_store_data = {Data_in[31:8],  mem_write_data[7:0]};
-                    2'b01: mem_store_data = {Data_in[31:16], mem_write_data[7:0], Data_in[7:0]};
-                    2'b10: mem_store_data = {Data_in[31:24], mem_write_data[7:0], Data_in[15:0]};
-                    2'b11: mem_store_data = {mem_write_data[7:0], Data_in[23:0]};
-                    default: mem_store_data = mem_write_data;
-                endcase
-            end
-            3'b001: begin // SH
-                case (mem_addr_off[1])
-                    1'b0: mem_store_data = {Data_in[31:16], mem_write_data[15:0]};
-                    1'b1: mem_store_data = {mem_write_data[15:0], Data_in[15:0]};
-                    default: mem_store_data = mem_write_data;
-                endcase
-            end
-            3'b010: mem_store_data = mem_write_data; // SW
-            default: mem_store_data = mem_write_data;
-        endcase
-    end
 
     always @(*) begin
         case (mem_funct3)
@@ -242,9 +218,11 @@ module SCPU(
         endcase
     end
 
-    assign Addr_out = mem_alu_result;
-    assign Data_out = mem_store_data;
-    assign mem_w    = mem_mem_write && mem_valid; // 只有有效指令才能写内存
+    assign Addr_out     = mem_alu_result;
+    assign Data_out     = mem_write_data;
+    assign dm_word_off  = mem_alu_result[1:0];
+    assign dm_funct3    = mem_funct3;
+    assign mem_w        = mem_mem_write && mem_valid; // 只有有效指令才能写内存
 
     assign mem_to_wb_valid = mem_valid && mem_ready_go;
 
