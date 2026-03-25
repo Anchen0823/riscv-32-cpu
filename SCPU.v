@@ -30,9 +30,8 @@ module SCPU(
     assign mem_allowin = !mem_valid || (mem_ready_go && wb_allowin);
     assign wb_allowin  = !wb_valid  || (wb_ready_go  && 1'b1); // 最后一级
 
-    // ============================================================
+
     // --- 1. IF Stage ---
-    // ============================================================
     reg  [31:0] if_pc;
     wire [31:0] next_pc;
     
@@ -44,9 +43,8 @@ module SCPU(
     assign PC_out = if_pc;
     assign if_to_id_valid = !reset; // 简单假设 IF 始终有效
 
-    // ============================================================
+
     // --- 2. ID Stage  ---
-    // ============================================================
     reg         id_valid;
     reg  [31:0] id_pc, id_inst;
 
@@ -123,9 +121,8 @@ module SCPU(
 
     assign id_to_ex_valid = id_valid && id_ready_go;
 
-    // ============================================================
+
     // --- 3. EX Stage  ---
-    // ============================================================
     reg         ex_valid;
     reg  [31:0] ex_rdata1, ex_rdata2, ex_imm, ex_pc;
     reg  [4:0]  ex_rd;
@@ -156,9 +153,8 @@ module SCPU(
     
     assign ex_to_mem_valid = ex_valid && ex_ready_go;
 
-    // ============================================================
+
     // --- 4. MEM Stage  ---
-    // ============================================================
     reg         mem_valid;
     reg  [31:0] mem_alu_result, mem_write_data;
     reg  [4:0]  mem_rd;
@@ -252,9 +248,8 @@ module SCPU(
 
     assign mem_to_wb_valid = mem_valid && mem_ready_go;
 
-    // ============================================================
+
     // --- 5. WB Stage (写回) ---
-    // ============================================================
     reg         wb_valid;
     reg  [31:0] wb_alu_result, wb_mem_data;
     reg  [4:0]  wb_rd;
