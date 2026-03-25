@@ -15,9 +15,8 @@ module SCPU(
     output [31:0] reg_data    // 调试用
 );
 
-    // ============================================================
+
     // --- 信号定义与握手逻辑 ---
-    // ============================================================
     wire if_allowin, id_allowin, ex_allowin, mem_allowin, wb_allowin;
     wire if_ready_go, id_ready_go, ex_ready_go, mem_ready_go, wb_ready_go;
     wire if_to_id_valid, id_to_ex_valid, ex_to_mem_valid, mem_to_wb_valid;
@@ -43,7 +42,7 @@ module SCPU(
         else if (if_allowin) if_pc <= next_pc; // 暂不考虑跳转导致的冲刷
     end
     assign PC_out = if_pc;
-    assign if_to_id_valid = !reset; // 简单假设 IF 始终有效
+    assign if_to_id_valid = !reset;
 
 
     // --- 2. ID Stage  ---

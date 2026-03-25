@@ -42,7 +42,7 @@ module sccomp(clk, rstn, reg_sel, reg_data);
          
   // instantiation of intruction memory (used for simulation)
    im    U_IM ( 
-      .addr(PC[9:2]),     // input:  rom address (256 words)
+      .addr(PC[10:2]),    // input:  rom address (512 words)
       .dout(instr)        // output: instruction
    );
         
