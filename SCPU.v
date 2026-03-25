@@ -31,7 +31,7 @@ module SCPU(
     assign wb_allowin  = !wb_valid  || (wb_ready_go  && 1'b1); // 最后一级
 
     // ============================================================
-    // --- 1. IF Stage (取指) ---
+    // --- 1. IF Stage ---
     // ============================================================
     reg  [31:0] if_pc;
     wire [31:0] next_pc;
@@ -45,7 +45,7 @@ module SCPU(
     assign if_to_id_valid = !reset; // 简单假设 IF 始终有效
 
     // ============================================================
-    // --- 2. ID Stage (译码/读寄存器) ---
+    // --- 2. ID Stage  ---
     // ============================================================
     reg         id_valid;
     reg  [31:0] id_pc, id_inst;
@@ -124,7 +124,7 @@ module SCPU(
     assign id_to_ex_valid = id_valid && id_ready_go;
 
     // ============================================================
-    // --- 3. EX Stage (执行) ---
+    // --- 3. EX Stage  ---
     // ============================================================
     reg         ex_valid;
     reg  [31:0] ex_rdata1, ex_rdata2, ex_imm, ex_pc;
@@ -157,7 +157,7 @@ module SCPU(
     assign ex_to_mem_valid = ex_valid && ex_ready_go;
 
     // ============================================================
-    // --- 4. MEM Stage (访存) ---
+    // --- 4. MEM Stage  ---
     // ============================================================
     reg         mem_valid;
     reg  [31:0] mem_alu_result, mem_write_data;
@@ -182,7 +182,7 @@ module SCPU(
     reg  [31:0] mem_store_data;
     reg  [31:0] mem_load_data;
 
-    // 由于 dm.v 仅支持 32-bit 整字读写，这里在 CPU 侧完成字节/半字拼接与扩展。
+    // 字节/半字拼接与扩展。
     always @(*) begin
         mem_store_data = mem_write_data;
         case (mem_funct3)
