@@ -39,7 +39,7 @@ module SCPU(
     // PC 寄存器
     always @(posedge clk or posedge reset) begin
         if (reset) if_pc <= 32'h0;
-        else if (if_allowin) if_pc <= next_pc; // 简单框架下暂不考虑跳转导致的冲刷
+        else if (if_allowin) if_pc <= next_pc; // 暂不考虑跳转导致的冲刷
     end
     assign PC_out = if_pc;
     assign if_to_id_valid = !reset; // 简单假设 IF 始终有效
@@ -64,13 +64,13 @@ module SCPU(
     wire [2:0] id_imm_sel;
     wire [2:0] id_funct3;
     wire [3:0] id_alu_ctrl;
-    wire id_alu_src, id_mem_to_reg, id_reg_write, id_mem_write, id_is_lui, id_jump, id_branch;
+    wire id_alu_src, id_mem_to_reg, id_reg_write, id_mem_write, id_is_lui, id_is_auipc, id_jump, id_branch;
     
     ctrl U_CTRL (
         .opcode(id_inst[6:0]), .funct3(id_inst[14:12]), .funct7(id_inst[31:25]),
         .ALUSrc(id_alu_src), .MemtoReg(id_mem_to_reg), .RegWrite(id_reg_write),
         .MemWrite(id_mem_write), .Branch(id_branch), .Jump(id_jump),
-        .is_lui(id_is_lui), .ImmSel(id_imm_sel), .ALUCtrl(id_alu_ctrl)
+        .is_lui(id_is_lui), .is_auipc(id_is_auipc), .ImmSel(id_imm_sel), .ALUCtrl(id_alu_ctrl)
     );
     assign id_funct3 = id_inst[14:12];
 
@@ -87,7 +87,7 @@ module SCPU(
         endcase
     end
 
-    // 分支/跳转判断与目标地址计算（在 ID 阶段完成）
+    // 分支/跳转判断与目标地址计算
     wire id_beq_taken  = (rdata1 == rdata2);
     wire id_bne_taken  = (rdata1 != rdata2);
     wire id_blt_taken  = ($signed(rdata1) < $signed(rdata2));
@@ -129,7 +129,7 @@ module SCPU(
     reg         ex_valid;
     reg  [31:0] ex_rdata1, ex_rdata2, ex_imm, ex_pc;
     reg  [4:0]  ex_rd;
-    reg         ex_alu_src, ex_mem_to_reg, ex_reg_write, ex_mem_write, ex_is_lui, ex_jump;
+    reg         ex_alu_src, ex_mem_to_reg, ex_reg_write, ex_mem_write, ex_is_lui, ex_is_auipc, ex_jump;
     reg  [2:0]  ex_funct3;
     reg  [3:0]  ex_alu_ctrl;
 
@@ -140,13 +140,13 @@ module SCPU(
         if (ex_allowin && id_to_ex_valid) begin
             {ex_rdata1, ex_rdata2, ex_imm, ex_pc} <= {rdata1, rdata2, id_ext_imm, id_pc};
             ex_rd <= id_inst[11:7];
-            {ex_alu_src, ex_mem_to_reg, ex_reg_write, ex_mem_write, ex_is_lui, ex_jump, ex_alu_ctrl} <= 
-            {id_alu_src, id_mem_to_reg, id_reg_write, id_mem_write, id_is_lui, id_jump, id_alu_ctrl};
+            {ex_alu_src, ex_mem_to_reg, ex_reg_write, ex_mem_write, ex_is_lui, ex_is_auipc, ex_jump, ex_alu_ctrl} <= 
+            {id_alu_src, id_mem_to_reg, id_reg_write, id_mem_write, id_is_lui, id_is_auipc, id_jump, id_alu_ctrl};
             ex_funct3 <= id_funct3;
         end
     end
 
-    wire [31:0] alu_A = ex_is_lui ? 32'b0 : ex_rdata1;
+    wire [31:0] alu_A = ex_is_lui ? 32'b0 : (ex_is_auipc ? ex_pc : ex_rdata1);
     wire [31:0] alu_B = ex_alu_src ? ex_imm : ex_rdata2;
     wire [31:0] ex_alu_result_raw;
     wire [31:0] ex_alu_result;

@@ -9,6 +9,7 @@ module ctrl(
     output reg        Branch,
     output reg        Jump,
     output reg        is_lui,
+    output reg        is_auipc,
     output reg  [2:0] ImmSel,
     output reg  [3:0] ALUCtrl
 );
@@ -22,6 +23,7 @@ module ctrl(
     localparam JAL    = 7'b1101111; // jal
     localparam JALR   = 7'b1100111; // jalr
     localparam LUI    = 7'b0110111; // lui
+    localparam AUIPC  = 7'b0010111; // auipc
 
     // ALUCtrl 编码：
     // 0000 ADD  0001 SUB  0010 SLL  0011 SLT  0100 SLTU
@@ -35,6 +37,7 @@ module ctrl(
         Branch   = 1'b0;
         Jump     = 1'b0;
         is_lui   = 1'b0;
+        is_auipc = 1'b0;
         ImmSel   = 3'b000;
         ALUCtrl  = 4'b0000; // 默认加法
 
@@ -89,7 +92,7 @@ module ctrl(
             BRANCH: begin
                 Branch   = 1'b1;
                 ImmSel   = 3'b010; // B-Type
-                ALUCtrl  = 4'b0001; // SUB (用减法结果判断是否相等/大小)
+                ALUCtrl  = 4'b0001; // SUB
             end
             
             JAL: begin
@@ -112,8 +115,16 @@ module ctrl(
                 ImmSel   = 3'b100; // U-Type
                 ALUCtrl  = 4'b0000; // ALU 可以直接做加法 (与0相加)
             end
+
+            AUIPC: begin
+                RegWrite = 1'b1;
+                ALUSrc   = 1'b1;
+                is_auipc = 1'b1;
+                ImmSel   = 3'b100; // U-Type 立即数
+                ALUCtrl  = 4'b0000; // rd = pc + imm
+            end
             
-            default: ; // 保持默认值
+            default: ;
         endcase
     end
 endmodule

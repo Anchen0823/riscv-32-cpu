@@ -14,7 +14,7 @@
 | `dm.v` | 数据存储器 |
 | `sccomp.v` | 顶层（CPU + IM + DM） |
 | `sccomp_tb.v` | 仿真测试平台 |
-| `Test_8_Instr.dat` | 测试程序（十六进制指令） |
+| `Test_8_Instr.dat` | 综合测试（覆盖课程各阶段：LUI/AUIPC、I/R 型算术逻辑、分支与跳转、访存） |
 | `run_sim.ps1` / `run_sim.bat` | 编译与运行仿真脚本 |
 
 ## 支持的指令
@@ -24,7 +24,7 @@
 - **访存**：LB, LH, LW, LBU, LHU, SB, SH, SW  
 - **分支**：BEQ, BNE, BLT, BGE, BLTU, BGEU  
 - **跳转**：JAL, JALR  
-- **其他**：LUI  
+- **其他**：LUI、AUIPC（`pc + imm[31:12]<<12`）  
 
 ## 环境与运行
 
