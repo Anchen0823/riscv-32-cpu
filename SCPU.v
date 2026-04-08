@@ -116,12 +116,25 @@ module SCPU(
                                  (mem_can_forward_to_id && (mem_rd == id_rs2)) ? (mem_mem_to_reg ? mem_load_data : mem_alu_result) :
                                  (wb_can_forward_to_id  && (wb_rd  == id_rs2)) ? wb_write_data : rdata2;
 
-    // 仅在 branch/jalr 需要源操作数时，检测 EX 级 load-use 冲突并停顿 1 拍
-    wire id_need_rs1 = id_branch || id_is_jalr;
-    wire id_need_rs2 = id_branch;
-    wire id_branch_load_hazard = id_valid && ex_valid && ex_mem_to_reg && (ex_rd != 5'd0) &&
-                                 ((id_need_rs1 && (ex_rd == id_rs1)) || (id_need_rs2 && (ex_rd == id_rs2)));
-    assign id_ready_go = !id_branch_load_hazard;
+    // ===== 阶段 7：通用 load-use hazard 检测（冒险检测 + 停顿）=====
+    // 条件（经典 5 级流水）：
+    // ID/EX.MemRead && (ID/EX.rd == IF/ID.rs1 || ID/EX.rd == IF/ID.rs2)
+    //
+    // 为避免 I/U/J 等类型上的伪相关，这里按 opcode 判定当前 ID 指令是否真正使用 rs1/rs2。
+    wire [6:0] id_opcode = id_inst[6:0];
+    wire id_use_rs1 = (id_opcode == 7'b0110011) || // R-Type
+                      (id_opcode == 7'b0010011) || // I-Type ALU
+                      (id_opcode == 7'b0000011) || // LOAD
+                      (id_opcode == 7'b0100011) || // STORE
+                      (id_opcode == 7'b1100011) || // BRANCH
+                      (id_opcode == 7'b1100111);   // JALR
+    wire id_use_rs2 = (id_opcode == 7'b0110011) || // R-Type
+                      (id_opcode == 7'b0100011) || // STORE
+                      (id_opcode == 7'b1100011);   // BRANCH
+
+    wire id_load_use_hazard = id_valid && ex_valid && ex_mem_to_reg && (ex_rd != 5'd0) &&
+                              ((id_use_rs1 && (ex_rd == id_rs1)) || (id_use_rs2 && (ex_rd == id_rs2)));
+    assign id_ready_go = !id_load_use_hazard;
 
     // 分支/跳转判断与目标地址计算（使用前递后的操作数）
     wire id_beq_taken  = (id_branch_src1 == id_branch_src2);
@@ -146,7 +159,7 @@ module SCPU(
 
     wire [31:0] id_branch_target = id_pc + id_ext_imm;
     wire [31:0] id_jalr_target   = (id_branch_src1 + id_ext_imm) & 32'hffff_fffe;
-    wire id_redirect = id_valid && !id_branch_load_hazard && (id_jump || (id_branch && id_branch_taken));
+    wire id_redirect = id_valid && !id_load_use_hazard && (id_jump || (id_branch && id_branch_taken));
 
     assign id_to_ex_valid = id_valid && id_ready_go;
 
@@ -154,7 +167,7 @@ module SCPU(
     // --- 3. EX Stage  ---
     reg         ex_valid;
     reg  [31:0] ex_rdata1, ex_rdata2, ex_imm, ex_pc;
-    reg  [4:0]  ex_rd;
+    reg  [4:0]  ex_rs1, ex_rs2, ex_rd;
     reg         ex_alu_src, ex_mem_to_reg, ex_reg_write, ex_mem_write, ex_is_lui, ex_is_auipc, ex_jump;
     reg  [2:0]  ex_funct3;
     reg  [3:0]  ex_alu_ctrl;
@@ -165,15 +178,33 @@ module SCPU(
         else if (ex_allowin) ex_valid <= id_to_ex_valid;
         if (ex_allowin && id_to_ex_valid) begin
             {ex_rdata1, ex_rdata2, ex_imm, ex_pc} <= {rdata1, rdata2, id_ext_imm, id_pc};
-            ex_rd <= id_inst[11:7];
+            ex_rs1 <= id_inst[19:15];
+            ex_rs2 <= id_inst[24:20];
+            ex_rd  <= id_inst[11:7];
             {ex_alu_src, ex_mem_to_reg, ex_reg_write, ex_mem_write, ex_is_lui, ex_is_auipc, ex_jump, ex_alu_ctrl} <= 
             {id_alu_src, id_mem_to_reg, id_reg_write, id_mem_write, id_is_lui, id_is_auipc, id_jump, id_alu_ctrl};
             ex_funct3 <= id_funct3;
         end
     end
 
-    wire [31:0] alu_A = ex_is_lui ? 32'b0 : (ex_is_auipc ? ex_pc : ex_rdata1);
-    wire [31:0] alu_B = ex_alu_src ? ex_imm : ex_rdata2;
+    // ===== 阶段 7：完整前递（MEM/WB -> EX）=====
+    // EX 级两路源操作数按优先级选择：MEM 优先于 WB，再退回 ID/EX 原值
+    // 注意：load-use 已在 ID 级停顿 1 拍，此时 load 位于 MEM，mem_load_data 可用于前递。
+    wire [31:0] mem_forward_data = mem_mem_to_reg ? mem_load_data : mem_alu_result;
+    wire [31:0] wb_forward_data  = wb_write_data;
+    wire mem_can_forward_to_ex   = mem_valid && mem_reg_write && (mem_rd != 5'd0);
+    wire wb_can_forward_to_ex    = wb_valid  && wb_reg_write  && (wb_rd  != 5'd0);
+
+    wire [31:0] ex_src1_fwd = (mem_can_forward_to_ex && (mem_rd == ex_rs1)) ? mem_forward_data :
+                              (wb_can_forward_to_ex  && (wb_rd  == ex_rs1)) ? wb_forward_data  :
+                                                                             ex_rdata1;
+    wire [31:0] ex_src2_fwd = (mem_can_forward_to_ex && (mem_rd == ex_rs2)) ? mem_forward_data :
+                              (wb_can_forward_to_ex  && (wb_rd  == ex_rs2)) ? wb_forward_data  :
+                                                                             ex_rdata2;
+
+    wire [31:0] alu_A = ex_is_lui ? 32'b0 : (ex_is_auipc ? ex_pc : ex_src1_fwd);
+    wire [31:0] alu_B = ex_alu_src ? ex_imm : ex_src2_fwd;
+    wire [31:0] ex_store_data = ex_src2_fwd;
     wire [31:0] ex_alu_result_raw;
     wire [31:0] ex_alu_result;
 
@@ -196,7 +227,7 @@ module SCPU(
         else if (mem_allowin) mem_valid <= ex_to_mem_valid;
         if (mem_allowin && ex_to_mem_valid) begin
             mem_alu_result <= ex_alu_result;
-            mem_write_data <= ex_rdata2;
+            mem_write_data <= ex_store_data;
             mem_rd <= ex_rd;
             {mem_mem_to_reg, mem_reg_write, mem_mem_write} <= {ex_mem_to_reg, ex_reg_write, ex_mem_write};
             mem_funct3 <= ex_funct3;
