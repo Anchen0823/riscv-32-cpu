@@ -1,11 +1,11 @@
 module dm(
     input         clk,
     input         DMWr,       // 写使能
-    input  [6:0]  addr,       // 字地址，对应 Addr[8:2]
+    input  [6:0]  addr,       // 字地址
     input  [1:0]  word_off,   // 字内字节偏移 Addr[1:0]
     input  [2:0]  st_funct3,  // 写类型：SB=000, SH=001, SW=010
-    input  [31:0] din,        // rs2 原始值；SB 用 [7:0]，SH 用 [15:0]，SW 用全字
-    output [31:0] dout        // 输出整字
+    input  [31:0] din,        // 输入
+    output [31:0] dout        // 输出
 );
     reg [31:0] RAM [0:127];
 
