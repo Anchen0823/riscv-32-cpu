@@ -21,8 +21,11 @@ module SCPU(
     wire if_ready_go, id_ready_go, ex_ready_go, mem_ready_go, wb_ready_go;
     wire if_to_id_valid, id_to_ex_valid, ex_to_mem_valid, mem_to_wb_valid;
 
-    // 现阶段所有 ready_go 恒为 1
-    assign {if_ready_go, id_ready_go, ex_ready_go, mem_ready_go, wb_ready_go} = 5'b11111;
+    // 除了 ID 级可能因分支相关 load-use 冲突停顿，其余级 ready_go 恒为 1
+    assign if_ready_go  = 1'b1;
+    assign ex_ready_go  = 1'b1;
+    assign mem_ready_go = 1'b1;
+    assign wb_ready_go  = 1'b1;
 
     // 握手链
     assign if_allowin  = (if_ready_go && id_allowin); 
@@ -86,13 +89,47 @@ module SCPU(
         endcase
     end
 
-    // 分支/跳转判断与目标地址计算
-    wire id_beq_taken  = (rdata1 == rdata2);
-    wire id_bne_taken  = (rdata1 != rdata2);
-    wire id_blt_taken  = ($signed(rdata1) < $signed(rdata2));
-    wire id_bge_taken  = ($signed(rdata1) >= $signed(rdata2));
-    wire id_bltu_taken = (rdata1 < rdata2);
-    wire id_bgeu_taken = (rdata1 >= rdata2);
+    wire [31:0] rdata1, rdata2;
+    // RF 读取
+    RF U_RF (
+        .clk(clk), .rst(reset), .R1_adr(id_inst[19:15]), .R2_adr(id_inst[24:20]),
+        .W_adr(wb_rd), .Din(wb_write_data), .We(wb_reg_write), // 来自 WB 阶段
+        .R1_dat(rdata1), .R2_dat(rdata2), .reg_sel(reg_sel), .reg_data(reg_data)
+    );
+
+    // ===== 阶段 6：ID 级分支/跳转前递 + 冲突检测 =====
+    wire [4:0] id_rs1 = id_inst[19:15];
+    wire [4:0] id_rs2 = id_inst[24:20];
+    wire id_is_jalr   = (id_inst[6:0] == 7'b1100111);
+
+    // EX 级可前递数据（load 指令在 EX 级数据尚未可用，不能前递）
+    wire [31:0] ex_forward_data  = ex_jump ? (ex_pc + 32'd4) : ex_alu_result_raw;
+    wire ex_can_forward_to_id    = ex_valid && ex_reg_write && !ex_mem_to_reg && (ex_rd != 5'd0);
+    wire mem_can_forward_to_id   = mem_valid && mem_reg_write && (mem_rd != 5'd0);
+    wire wb_can_forward_to_id    = wb_valid && wb_reg_write && (wb_rd != 5'd0);
+
+    wire [31:0] id_branch_src1 = (ex_can_forward_to_id  && (ex_rd  == id_rs1)) ? ex_forward_data :
+                                 (mem_can_forward_to_id && (mem_rd == id_rs1)) ? (mem_mem_to_reg ? mem_load_data : mem_alu_result) :
+                                 (wb_can_forward_to_id  && (wb_rd  == id_rs1)) ? wb_write_data : rdata1;
+
+    wire [31:0] id_branch_src2 = (ex_can_forward_to_id  && (ex_rd  == id_rs2)) ? ex_forward_data :
+                                 (mem_can_forward_to_id && (mem_rd == id_rs2)) ? (mem_mem_to_reg ? mem_load_data : mem_alu_result) :
+                                 (wb_can_forward_to_id  && (wb_rd  == id_rs2)) ? wb_write_data : rdata2;
+
+    // 仅在 branch/jalr 需要源操作数时，检测 EX 级 load-use 冲突并停顿 1 拍
+    wire id_need_rs1 = id_branch || id_is_jalr;
+    wire id_need_rs2 = id_branch;
+    wire id_branch_load_hazard = id_valid && ex_valid && ex_mem_to_reg && (ex_rd != 5'd0) &&
+                                 ((id_need_rs1 && (ex_rd == id_rs1)) || (id_need_rs2 && (ex_rd == id_rs2)));
+    assign id_ready_go = !id_branch_load_hazard;
+
+    // 分支/跳转判断与目标地址计算（使用前递后的操作数）
+    wire id_beq_taken  = (id_branch_src1 == id_branch_src2);
+    wire id_bne_taken  = (id_branch_src1 != id_branch_src2);
+    wire id_blt_taken  = ($signed(id_branch_src1) < $signed(id_branch_src2));
+    wire id_bge_taken  = ($signed(id_branch_src1) >= $signed(id_branch_src2));
+    wire id_bltu_taken = (id_branch_src1 < id_branch_src2);
+    wire id_bgeu_taken = (id_branch_src1 >= id_branch_src2);
 
     reg id_branch_taken;
     always @(*) begin
@@ -107,18 +144,9 @@ module SCPU(
         endcase
     end
 
-    wire id_is_jalr    = (id_inst[6:0] == 7'b1100111);
     wire [31:0] id_branch_target = id_pc + id_ext_imm;
-    wire [31:0] id_jalr_target   = (rdata1 + id_ext_imm) & 32'hffff_fffe;
-    wire id_redirect = id_valid && (id_jump || (id_branch && id_branch_taken));
-
-    wire [31:0] rdata1, rdata2;
-    // RF 读取
-    RF U_RF (
-        .clk(clk), .rst(reset), .R1_adr(id_inst[19:15]), .R2_adr(id_inst[24:20]),
-        .W_adr(wb_rd), .Din(wb_write_data), .We(wb_reg_write), // 来自 WB 阶段
-        .R1_dat(rdata1), .R2_dat(rdata2), .reg_sel(reg_sel), .reg_data(reg_data)
-    );
+    wire [31:0] id_jalr_target   = (id_branch_src1 + id_ext_imm) & 32'hffff_fffe;
+    wire id_redirect = id_valid && !id_branch_load_hazard && (id_jump || (id_branch && id_branch_taken));
 
     assign id_to_ex_valid = id_valid && id_ready_go;
 
