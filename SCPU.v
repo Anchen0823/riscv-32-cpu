@@ -116,11 +116,9 @@ module SCPU(
                                  (mem_can_forward_to_id && (mem_rd == id_rs2)) ? (mem_mem_to_reg ? mem_load_data : mem_alu_result) :
                                  (wb_can_forward_to_id  && (wb_rd  == id_rs2)) ? wb_write_data : rdata2;
 
-    // ===== 阶段 7：通用 load-use hazard 检测（冒险检测 + 停顿）=====
-    // 条件（经典 5 级流水）：
+    // ===== load-use hazard 检测（冒险检测 + 停顿）=====
     // ID/EX.MemRead && (ID/EX.rd == IF/ID.rs1 || ID/EX.rd == IF/ID.rs2)
-    //
-    // 为避免 I/U/J 等类型上的伪相关，这里按 opcode 判定当前 ID 指令是否真正使用 rs1/rs2。
+    // 按 opcode 判定当前 ID 指令是否真正使用 rs1/rs2。
     wire [6:0] id_opcode = id_inst[6:0];
     wire id_use_rs1 = (id_opcode == 7'b0110011) || // R-Type
                       (id_opcode == 7'b0010011) || // I-Type ALU
@@ -187,7 +185,7 @@ module SCPU(
         end
     end
 
-    // ===== 阶段 7：完整前递（MEM/WB -> EX）=====
+    // 前递逻辑
     // EX 级两路源操作数按优先级选择：MEM 优先于 WB，再退回 ID/EX 原值
     // 注意：load-use 已在 ID 级停顿 1 拍，此时 load 位于 MEM，mem_load_data 可用于前递。
     wire [31:0] mem_forward_data = mem_mem_to_reg ? mem_load_data : mem_alu_result;
