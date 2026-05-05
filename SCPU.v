@@ -54,11 +54,16 @@ module SCPU(
 
     // IF/ID 流水线寄存器
     always @(posedge clk or posedge reset) begin
-        if (reset) id_valid <= 1'b0;
-        else if (id_allowin) id_valid <= if_to_id_valid && !id_redirect;
-        if (id_allowin && if_to_id_valid && !id_redirect) begin
-            id_pc   <= if_pc;
-            id_inst <= inst_in;
+        if (reset) begin
+            id_valid <= 1'b0;
+            id_pc    <= 32'b0;
+            id_inst  <= 32'b0;
+        end else if (id_allowin) begin
+            id_valid <= if_to_id_valid && !id_redirect;
+            if (if_to_id_valid && !id_redirect) begin
+                id_pc   <= if_pc;
+                id_inst <= inst_in;
+            end
         end
     end
 
@@ -172,16 +177,24 @@ module SCPU(
 
     // ID/EX 流水线寄存器
     always @(posedge clk or posedge reset) begin
-        if (reset) ex_valid <= 1'b0;
-        else if (ex_allowin) ex_valid <= id_to_ex_valid;
-        if (ex_allowin && id_to_ex_valid) begin
-            {ex_rdata1, ex_rdata2, ex_imm, ex_pc} <= {rdata1, rdata2, id_ext_imm, id_pc};
-            ex_rs1 <= id_inst[19:15];
-            ex_rs2 <= id_inst[24:20];
-            ex_rd  <= id_inst[11:7];
-            {ex_alu_src, ex_mem_to_reg, ex_reg_write, ex_mem_write, ex_is_lui, ex_is_auipc, ex_jump, ex_alu_ctrl} <= 
-            {id_alu_src, id_mem_to_reg, id_reg_write, id_mem_write, id_is_lui, id_is_auipc, id_jump, id_alu_ctrl};
-            ex_funct3 <= id_funct3;
+        if (reset) begin
+            ex_valid <= 1'b0;
+            {ex_rdata1, ex_rdata2, ex_imm, ex_pc} <= 128'b0;
+            {ex_rs1, ex_rs2, ex_rd} <= 15'b0;
+            {ex_alu_src, ex_mem_to_reg, ex_reg_write, ex_mem_write, ex_is_lui, ex_is_auipc, ex_jump} <= 7'b0;
+            ex_alu_ctrl <= 4'b0;
+            ex_funct3 <= 3'b0;
+        end else if (ex_allowin) begin
+            ex_valid <= id_to_ex_valid;
+            if (id_to_ex_valid) begin
+                {ex_rdata1, ex_rdata2, ex_imm, ex_pc} <= {rdata1, rdata2, id_ext_imm, id_pc};
+                ex_rs1 <= id_inst[19:15];
+                ex_rs2 <= id_inst[24:20];
+                ex_rd  <= id_inst[11:7];
+                {ex_alu_src, ex_mem_to_reg, ex_reg_write, ex_mem_write, ex_is_lui, ex_is_auipc, ex_jump, ex_alu_ctrl} <=
+                {id_alu_src, id_mem_to_reg, id_reg_write, id_mem_write, id_is_lui, id_is_auipc, id_jump, id_alu_ctrl};
+                ex_funct3 <= id_funct3;
+            end
         end
     end
 
@@ -221,14 +234,22 @@ module SCPU(
 
     // EX/MEM 流水线寄存器
     always @(posedge clk or posedge reset) begin
-        if (reset) mem_valid <= 1'b0;
-        else if (mem_allowin) mem_valid <= ex_to_mem_valid;
-        if (mem_allowin && ex_to_mem_valid) begin
-            mem_alu_result <= ex_alu_result;
-            mem_write_data <= ex_store_data;
-            mem_rd <= ex_rd;
-            {mem_mem_to_reg, mem_reg_write, mem_mem_write} <= {ex_mem_to_reg, ex_reg_write, ex_mem_write};
-            mem_funct3 <= ex_funct3;
+        if (reset) begin
+            mem_valid <= 1'b0;
+            mem_alu_result <= 32'b0;
+            mem_write_data <= 32'b0;
+            mem_rd <= 5'b0;
+            {mem_mem_to_reg, mem_reg_write, mem_mem_write} <= 3'b0;
+            mem_funct3 <= 3'b0;
+        end else if (mem_allowin) begin
+            mem_valid <= ex_to_mem_valid;
+            if (ex_to_mem_valid) begin
+                mem_alu_result <= ex_alu_result;
+                mem_write_data <= ex_store_data;
+                mem_rd <= ex_rd;
+                {mem_mem_to_reg, mem_reg_write, mem_mem_write} <= {ex_mem_to_reg, ex_reg_write, ex_mem_write};
+                mem_funct3 <= ex_funct3;
+            end
         end
     end
 
@@ -291,13 +312,20 @@ module SCPU(
 
     // MEM/WB 流水线寄存器
     always @(posedge clk or posedge reset) begin
-        if (reset) wb_valid <= 1'b0;
-        else if (wb_allowin) wb_valid <= mem_to_wb_valid;
-        if (wb_allowin && mem_to_wb_valid) begin
-            wb_alu_result <= mem_alu_result;
-            wb_mem_data   <= mem_load_data;
-            wb_rd <= mem_rd;
-            {wb_mem_to_reg, wb_reg_write} <= {mem_mem_to_reg, mem_reg_write};
+        if (reset) begin
+            wb_valid <= 1'b0;
+            wb_alu_result <= 32'b0;
+            wb_mem_data <= 32'b0;
+            wb_rd <= 5'b0;
+            {wb_mem_to_reg, wb_reg_write} <= 2'b0;
+        end else if (wb_allowin) begin
+            wb_valid <= mem_to_wb_valid;
+            if (mem_to_wb_valid) begin
+                wb_alu_result <= mem_alu_result;
+                wb_mem_data   <= mem_load_data;
+                wb_rd <= mem_rd;
+                {wb_mem_to_reg, wb_reg_write} <= {mem_mem_to_reg, mem_reg_write};
+            end
         end
     end
 

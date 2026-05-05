@@ -3,6 +3,7 @@
 simv
 simv_out
 results.txt
+.tools/
 
 # Vivado generated files
 *.jou
