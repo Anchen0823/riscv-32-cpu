@@ -42,7 +42,7 @@ module SCPU(
     // PC 寄存器
     always @(posedge clk or posedge reset) begin
         if (reset) if_pc <= 32'h0;
-        else if (if_allowin) if_pc <= next_pc; // 暂不考虑跳转导致的冲刷
+        else if (if_allowin) if_pc <= next_pc;
     end
     assign PC_out = if_pc;
     assign if_to_id_valid = !reset;
@@ -97,7 +97,7 @@ module SCPU(
         .R1_dat(rdata1), .R2_dat(rdata2), .reg_sel(reg_sel), .reg_data(reg_data)
     );
 
-    // ===== 阶段 6：ID 级分支/跳转前递 + 冲突检测 =====
+    // ===== ID 级分支/跳转前递 + 冲突检测 =====
     wire [4:0] id_rs1 = id_inst[19:15];
     wire [4:0] id_rs2 = id_inst[24:20];
     wire id_is_jalr   = (id_inst[6:0] == 7'b1100111);
@@ -303,7 +303,7 @@ module SCPU(
 
     wire [31:0] wb_write_data = wb_mem_to_reg ? wb_mem_data : wb_alu_result;
     
-    // PC 更新逻辑：支持 branch/jal/jalr
+    // PC 更新 branch/jal/jalr
     assign next_pc = id_redirect
                    ? (id_is_jalr ? id_jalr_target : id_branch_target)
                    : (if_pc + 32'd4);

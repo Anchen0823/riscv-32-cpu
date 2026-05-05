@@ -3,3 +3,14 @@
 simv
 simv_out
 results.txt
+
+# Vivado generated files
+*.jou
+*.log
+*.str
+.Xil/
+vivado/*.cache/
+vivado/*.hw/
+vivado/*.runs/
+vivado/*.sim/
+vivado/*.ip_user_files/
