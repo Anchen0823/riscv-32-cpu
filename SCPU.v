@@ -12,7 +12,11 @@ module SCPU(
     output [1:0]  dm_word_off,// 字内字节偏移，接 Addr_out[1:0]
     output [2:0]  dm_funct3,  // MEM 段 funct3，写内存时 dm 用其区分 SB/SH/SW
     input  [4:0]  reg_sel,    // 调试用
-    output [31:0] reg_data    // 调试用
+    output [31:0] reg_data,   // 调试用
+    input         irq,
+    input         intr_ret,
+    output        interrupt_active,
+    output [31:0] interrupt_epc
 );
 
 
@@ -38,13 +42,42 @@ module SCPU(
     // --- 1. IF Stage ---
     reg  [31:0] if_pc;
     wire [31:0] next_pc;
+    reg  [31:0] epc;
+    reg         in_interrupt;
+    wire        take_interrupt;
+    wire        return_interrupt = if_allowin && intr_ret && in_interrupt;
+    wire        interrupt_flush = take_interrupt || return_interrupt;
     
     // PC 寄存器
     always @(posedge clk or posedge reset) begin
-        if (reset) if_pc <= 32'h0;
-        else if (if_allowin) if_pc <= next_pc;
+        if (reset) begin
+            if_pc <= 32'h0;
+        end else if (if_allowin) begin
+            if (return_interrupt) begin
+                if_pc <= epc;
+            end else if (take_interrupt) begin
+                if_pc <= 32'h0000_0100;
+            end else begin
+                if_pc <= next_pc;
+            end
+        end
     end
+
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            epc <= 32'h0;
+            in_interrupt <= 1'b0;
+        end else if (return_interrupt) begin
+            in_interrupt <= 1'b0;
+        end else if (take_interrupt) begin
+            epc <= if_pc;
+            in_interrupt <= 1'b1;
+        end
+    end
+
     assign PC_out = if_pc;
+    assign interrupt_active = in_interrupt;
+    assign interrupt_epc = epc;
     assign if_to_id_valid = !reset;
 
 
@@ -55,6 +88,10 @@ module SCPU(
     // IF/ID 流水线寄存器
     always @(posedge clk or posedge reset) begin
         if (reset) begin
+            id_valid <= 1'b0;
+            id_pc    <= 32'b0;
+            id_inst  <= 32'b0;
+        end else if (interrupt_flush) begin
             id_valid <= 1'b0;
             id_pc    <= 32'b0;
             id_inst  <= 32'b0;
@@ -163,6 +200,7 @@ module SCPU(
     wire [31:0] id_branch_target = id_pc + id_ext_imm;
     wire [31:0] id_jalr_target   = (id_branch_src1 + id_ext_imm) & 32'hffff_fffe;
     wire id_redirect = id_valid && !id_load_use_hazard && (id_jump || (id_branch && id_branch_taken));
+    assign take_interrupt = if_allowin && irq && !in_interrupt && !id_redirect;
 
     assign id_to_ex_valid = id_valid && id_ready_go;
 
@@ -178,6 +216,13 @@ module SCPU(
     // ID/EX 流水线寄存器
     always @(posedge clk or posedge reset) begin
         if (reset) begin
+            ex_valid <= 1'b0;
+            {ex_rdata1, ex_rdata2, ex_imm, ex_pc} <= 128'b0;
+            {ex_rs1, ex_rs2, ex_rd} <= 15'b0;
+            {ex_alu_src, ex_mem_to_reg, ex_reg_write, ex_mem_write, ex_is_lui, ex_is_auipc, ex_jump} <= 7'b0;
+            ex_alu_ctrl <= 4'b0;
+            ex_funct3 <= 3'b0;
+        end else if (interrupt_flush) begin
             ex_valid <= 1'b0;
             {ex_rdata1, ex_rdata2, ex_imm, ex_pc} <= 128'b0;
             {ex_rs1, ex_rs2, ex_rd} <= 15'b0;
@@ -235,6 +280,13 @@ module SCPU(
     // EX/MEM 流水线寄存器
     always @(posedge clk or posedge reset) begin
         if (reset) begin
+            mem_valid <= 1'b0;
+            mem_alu_result <= 32'b0;
+            mem_write_data <= 32'b0;
+            mem_rd <= 5'b0;
+            {mem_mem_to_reg, mem_reg_write, mem_mem_write} <= 3'b0;
+            mem_funct3 <= 3'b0;
+        end else if (interrupt_flush) begin
             mem_valid <= 1'b0;
             mem_alu_result <= 32'b0;
             mem_write_data <= 32'b0;
@@ -313,6 +365,12 @@ module SCPU(
     // MEM/WB 流水线寄存器
     always @(posedge clk or posedge reset) begin
         if (reset) begin
+            wb_valid <= 1'b0;
+            wb_alu_result <= 32'b0;
+            wb_mem_data <= 32'b0;
+            wb_rd <= 5'b0;
+            {wb_mem_to_reg, wb_reg_write} <= 2'b0;
+        end else if (interrupt_flush) begin
             wb_valid <= 1'b0;
             wb_alu_result <= 32'b0;
             wb_mem_data <= 32'b0;

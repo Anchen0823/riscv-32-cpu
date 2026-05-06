@@ -10,6 +10,8 @@ module sccomp(clk, rstn, reg_sel, reg_data);
    wire [31:0]    dm_addr, dm_din, dm_dout;
    wire [1:0]     dm_word_off;
    wire [2:0]     dm_funct3;
+   wire           interrupt_active;
+   wire [31:0]    interrupt_epc;
    
    wire rst = ~rstn;
        
@@ -26,7 +28,11 @@ module sccomp(clk, rstn, reg_sel, reg_data);
          .dm_word_off(dm_word_off),
          .dm_funct3(dm_funct3),
          .reg_sel(reg_sel),         // input:  register selection
-         .reg_data(reg_data)        // output: register data
+         .reg_data(reg_data),       // output: register data
+         .irq(1'b0),
+         .intr_ret(1'b0),
+         .interrupt_active(interrupt_active),
+         .interrupt_epc(interrupt_epc)
          );
          
   // instantiation of data memory  
@@ -47,4 +53,3 @@ module sccomp(clk, rstn, reg_sel, reg_data);
    );
         
 endmodule
-

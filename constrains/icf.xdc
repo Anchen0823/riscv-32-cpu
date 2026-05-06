@@ -39,3 +39,7 @@ set_property -dict { PACKAGE_PIN P14 IOSTANDARD LVCMOS33 } [get_ports { disp_an_
 set_property -dict { PACKAGE_PIN T14 IOSTANDARD LVCMOS33 } [get_ports { disp_an_o[5] }]
 set_property -dict { PACKAGE_PIN K2  IOSTANDARD LVCMOS33 } [get_ports { disp_an_o[6] }]
 set_property -dict { PACKAGE_PIN U13 IOSTANDARD LVCMOS33 } [get_ports { disp_an_o[7] }]
+
+## USB HID PS/2 keyboard
+set_property -dict { PACKAGE_PIN F4 IOSTANDARD LVCMOS33 PULLUP true } [get_ports { ps2_clk }]
+set_property -dict { PACKAGE_PIN B2 IOSTANDARD LVCMOS33 PULLUP true } [get_ports { ps2_data }]
