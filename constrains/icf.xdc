@@ -22,6 +22,8 @@ set_property -dict { PACKAGE_PIN U12 IOSTANDARD LVCMOS33 } [get_ports { sw_i[13]
 set_property -dict { PACKAGE_PIN U11 IOSTANDARD LVCMOS33 } [get_ports { sw_i[14] }]
 set_property -dict { PACKAGE_PIN V10 IOSTANDARD LVCMOS33 } [get_ports { sw_i[15] }]
 
+set_property -dict { PACKAGE_PIN H17 IOSTANDARD LVCMOS33 } [get_ports { led_shift_o }]
+
 set_property -dict { PACKAGE_PIN T10 IOSTANDARD LVCMOS33 } [get_ports { disp_seg_o[0] }]
 set_property -dict { PACKAGE_PIN R10 IOSTANDARD LVCMOS33 } [get_ports { disp_seg_o[1] }]
 set_property -dict { PACKAGE_PIN K16 IOSTANDARD LVCMOS33 } [get_ports { disp_seg_o[2] }]
